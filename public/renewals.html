@@ -71,15 +71,42 @@
 let lastRequest=null;let lastResult=null;
 const cols=["subscription_id","pub_code","publication_name","renewal_delivery_method","billing_method","subscription_status","paid_to_date","adjusted_balance_date","balance_owing","bpay_reference_number","rate_option_1_amount","rate_option_2_amount","rate_option_3_amount","suppression_reason"];
 function todayPlus(days){const d=new Date();d.setDate(d.getDate()+days);return d.toISOString().slice(0,10)}
-function setBusy(v){document.getElementById("busy").classList.toggle("d-none",!v);document.getElementById("dryRunBtn").disabled=v;document.getElementById("liveRunBtn").disabled=v||!lastResult||lastResult.response?.missing_bpay_count>0}
+function setBusy(v){
+  document.getElementById("busy").classList.toggle("d-none",!v);
+  document.getElementById("dryRunBtn").disabled=v;
+  document.getElementById("liveRunBtn").disabled=v||!lastResult||lastResult.missing_bpay_count>0;
+}
 function alert(type,msg){document.getElementById("alertBox").innerHTML=`<div class="alert alert-${type}">${msg}</div>`}
 function clearAlert(){document.getElementById("alertBox").innerHTML=""}
 async function api(path,body){const r=await fetch(`/api${path}`,{method:"POST",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});if(r.status===401||r.status===403){window.location.href="/login?returnTo="+encodeURIComponent(window.location.pathname+window.location.search);return null}const data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(data?.detail||data?.error||`Request failed (${r.status})`);return data}
 function metric(title,value,variant="primary"){return `<div class="col-sm-6 col-lg-3"><div class="card card-metric border-${variant}"><div class="card-body"><div class="text-muted">${title}</div><div class="display-6">${value}</div></div></div></div>`}
-function renderSummary(result){const r=result.response;document.getElementById("summary").classList.remove("d-none");document.getElementById("summary").innerHTML=[metric("Mail",r.mail_count),metric("eBill",r.ebill_count),metric("Missing BPAY",r.missing_bpay_count,r.missing_bpay_count>0?"danger":"success"),metric("Suppressed",r.suppressed_count,"secondary")].join("");const warnings=(r.warnings||[]).map(w=>`<div class="alert alert-warning mb-2">${w}</div>`).join("");document.getElementById("alertBox").innerHTML=warnings;if(r.missing_bpay_count>0)document.getElementById("liveRunBtn").disabled=true;else document.getElementById("liveRunBtn").disabled=false}
+function renderSummary(result){
+  const r=result;
+  document.getElementById("summary").classList.remove("d-none");
+  document.getElementById("summary").innerHTML=[
+    metric("Mail",r.mail_count),
+    metric("eBill",r.ebill_count),
+    metric("Missing BPAY",r.missing_bpay_count,r.missing_bpay_count>0?"danger":"success"),
+    metric("Suppressed",r.suppressed_count,"secondary")
+  ].join("");
+
+  const warnings=(r.warnings||[]).map(w=>`<div class="alert alert-warning mb-2">${w}</div>`).join("");
+  document.getElementById("alertBox").innerHTML=warnings;
+
+  document.getElementById("liveRunBtn").disabled = r.missing_bpay_count > 0;
+}
 function renderDownloads(downloads){const map={mail_csv:"Mail CSV",ebill_csv:"eBill CSV",missing_bpay_csv:"Missing BPAY CSV",suppressed_csv:"Suppressed CSV",all_candidates_csv:"All candidates CSV"};const links=Object.entries(downloads||{}).map(([k,u])=>`<a class="btn btn-outline-primary btn-sm me-2 mb-2" href="${u}" target="_blank" rel="noopener">${map[k]||k}</a>`).join("");document.getElementById("downloads").classList.remove("d-none");document.getElementById("downloads").innerHTML=`<div class="card"><div class="card-body"><h5>Downloads</h5>${links||"<span class='text-muted'>No downloads available.</span>"}</div></div>`}
 function renderTable(elId,title,rows,total){const el=document.getElementById(elId);if(!rows||rows.length===0){el.innerHTML=`<div class="card"><div class="card-body"><h5>${title}</h5><p class="text-muted mb-0">No rows.</p></div></div>`;return}const headers=cols.filter(c=>rows.some(r=>r[c]!==undefined&&r[c]!==null));const body=rows.map(r=>`<tr>${headers.map(h=>`<td>${r[h]??""}</td>`).join("")}</tr>`).join("");el.innerHTML=`<div class="card"><div class="card-body"><h5>${title} <span class="text-muted fs-6">showing ${rows.length} of ${total}</span></h5><div class="table-wrap"><table class="table table-sm table-striped small-table"><thead><tr>${headers.map(h=>`<th>${h}</th>`).join("")}</tr></thead><tbody>${body}</tbody></table></div></div></div>`}
-function renderResults(result){document.getElementById("resultTabs").classList.remove("d-none");renderSummary(result);renderDownloads(result.response.downloads);renderTable("mailTable","Mail renewals",result.mail_rows,result.mail_total);renderTable("ebillTable","eBill renewals",result.ebill_rows,result.ebill_total);renderTable("bpayTable","Missing BPAY",result.missing_bpay_rows,result.missing_bpay_total);renderTable("suppressedTable","Suppressed preview",result.suppressed_rows,result.suppressed_total)}
+function renderResults(result){
+  document.getElementById("resultTabs").classList.remove("d-none");
+  renderSummary(result);
+  renderDownloads(result.downloads);
+
+  renderTable("mailTable","Mail renewals",[],result.mail_count);
+  renderTable("ebillTable","eBill renewals",[],result.ebill_count);
+  renderTable("bpayTable","Missing BPAY",[],result.missing_bpay_count);
+  renderTable("suppressedTable","Suppressed preview",[],result.suppressed_count);
+}
 async function loadUser(){const r=await fetch("/auth/me",{cache:"no-store",credentials:"include"});const data=await r.json();if(!data.authenticated){window.location.href="/login?returnTo="+encodeURIComponent(window.location.pathname);return}document.getElementById("userLabel").textContent=data.email}
 document.getElementById("invoiceDate").value=todayPlus(1);
 document.getElementById("dryRunForm").addEventListener("submit",async(e)=>{e.preventDefault();clearAlert();lastRequest={invoice_date:document.getElementById("invoiceDate").value,max_days_to_renewal_at_invoice_date:Number(document.getElementById("renewalDays").value||14),max_days_in_grace_at_invoice_date:Number(document.getElementById("graceDays").value||28)};try{setBusy(true);const result=await api("/renewals/dry-run",lastRequest);if(!result)return;lastResult=result;renderResults(result)}catch(err){alert("danger",err.message)}finally{setBusy(false)}});
