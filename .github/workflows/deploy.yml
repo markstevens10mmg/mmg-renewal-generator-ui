@@ -1,0 +1,61 @@
+name: Deploy Renewal Generator UI to Cloud Run
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  PROJECT_ID: naviga-data
+  PROJECT_NUMBER: "1028721840200"
+  REGION: australia-southeast2
+  SERVICE_NAME: mmg-renewal-generator-ui
+  IMAGE_NAME: mmg-renewal-generator-ui
+  REPOSITORY: cloud-run-source-deploy
+  BACKEND_BASE_URL: https://mmg-renewal-generator-1028721840200.australia-southeast2.run.app
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/1028721840200/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: github-cloud-run-deploy@naviga-data.iam.gserviceaccount.com
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker auth
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Build image
+        run: |
+          docker build \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} \
+            .
+
+      - name: Push image
+        run: |
+          docker push \
+            ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+
+      - name: Deploy public authenticated UI to Cloud Run
+        run: |
+          gcloud run deploy ${{ env.SERVICE_NAME }} \
+            --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} \
+            --region=${{ env.REGION }} \
+            --project=${{ env.PROJECT_ID }} \
+            --service-account=renewal-generator-ui-runtime@${{ env.PROJECT_ID }}.iam.gserviceaccount.com \
+            --allow-unauthenticated \
+            --set-env-vars=BACKEND_BASE_URL=${{ env.BACKEND_BASE_URL }} \
+            --set-secrets=GOOGLE_CLIENT_ID=GOOGLE_CLIENT_ID:latest,SESSION_JWT_SECRET=RENEWAL_UI_SESSION_JWT_SECRET:latest,AUTHORISED_EMAILS_JSON=RENEWAL_UI_AUTHORISED_EMAILS_JSON:latest

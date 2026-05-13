@@ -1,0 +1,16 @@
+{
+  "name": "mmg-renewal-generator-ui",
+  "version": "1.0.0",
+  "private": true,
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cookie-parser": "^1.4.6",
+    "express": "^4.19.2",
+    "google-auth-library": "^9.15.1",
+    "jsonwebtoken": "^9.0.2"
+  }
+}
