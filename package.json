@@ -8,9 +8,9 @@
     "start": "node server.js"
   },
   "dependencies": {
-    "cookie-parser": "^1.4.6",
-    "express": "^4.19.2",
+    "cookie-parser": "^1.4.7",
+    "express": "^4.22.2",
     "google-auth-library": "^9.15.1",
-    "jsonwebtoken": "^9.0.2"
+    "jsonwebtoken": "^9.0.3"
   }
 }
