@@ -91,7 +91,7 @@
 let lastRequest=null;let lastResult=null;
 const PAGE_SIZE_DEFAULT=100;
 const tableState={mail:{page:1,pageSize:PAGE_SIZE_DEFAULT,search:""},ebill:{page:1,pageSize:PAGE_SIZE_DEFAULT,search:""},bpay:{page:1,pageSize:PAGE_SIZE_DEFAULT,search:""},suppressed:{page:1,pageSize:PAGE_SIZE_DEFAULT,search:""}};
-const cols=["subscription_id","billing_name","email","publication_name","subscription_status","route_id","rate_code","invoice_date","renewal_delivery_method","adjusted_balance_date","balance_owing","bpay_reference_number","rate_option_1_amount","rate_option_2_amount","rate_option_3_amount","pdf_generator_template_id","pdf_template_status"];
+const cols=["billingAddressLine1","billingAddressLine2","billingName","bPayReferenceNumber","deliveryAddressLine1","deliveryAddressLine2","dueDate","invoiceDate","mastheadName","rateOption1Cost","rateOption1GST","rateOption1NewExpiryDate","rateOption1Period","rateOption2Cost","rateOption2GST","rateOption2NewExpiryDate","rateOption2Period","rateOption3Cost","rateOption3GST","rateOption3NewExpiryDate","rateOption3Period","ratesCode","subscriptionNumber","pdfGeneratorTemplateId","pdfTemplateStatus","renewalDeliveryMethod","email"];
 function todayPlus(days){const d=new Date();d.setDate(d.getDate()+days);return d.toISOString().slice(0,10)}
 function esc(v){return String(v??"").replace(/[&<>'"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[c]))}
 function setBusy(v){document.getElementById("busy").classList.toggle("d-none",!v);document.getElementById("dryRunBtn").disabled=v;document.getElementById("liveRunBtn").disabled=v||!lastResult||Number(lastResult.missing_bpay_count||0)>0;document.getElementById("resetBtn").disabled=v}
