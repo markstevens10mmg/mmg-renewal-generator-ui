@@ -116,7 +116,26 @@ const tableState={mail:{page:1,pageSize:PAGE_SIZE_DEFAULT,search:""},ebill:{page
 const baseCols=["subscriptionNumber","mastheadName","billingName","billingAddressLine1","billingAddressLine2","deliveryAddressLine1","deliveryAddressLine2","ratesCode","invoiceDate","paidToDate","bPayReferenceNumber","balanceOwing","balanceOwingGST","rateOption1Period","rateOption1Cost","rateOption1GST","rateOption2Period","rateOption2Cost","rateOption2GST","rateOption3Period","rateOption3Cost","rateOption3GST","officeAddress","cashInstructions","chequeInstructions","creditCardInstructions","email","renewalDeliveryMethod","publicationName","subscriptionStatus","routeId","pdfGeneratorTemplateId","pdfTemplateStatus","pdfRuleId","templateSelectionReason","documentType","hasBalanceOwing","hasOnlineStartCode","validRateCount","suppressionReason","suppressionRuleId"];
 function colsFor(key,mode){const cols=[...baseCols];if(mode==="live"&&key==="mail")cols.push("mailPdf");if(mode==="live"&&key==="ebill")cols.push("ebillPdfUrl","scheduledSendDate","emailStatus");return cols}
 function allSearchCols(mode){return Array.from(new Set([...baseCols,"mailPdf","ebillPdfUrl"]))}
-function todayPlus(days){const d=new Date();d.setDate(d.getDate()+days);return d.toISOString().slice(0,10)}
+function todayPlusMelbourne(days){
+  const now = new Date();
+
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Australia/Melbourne",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  });
+
+  const parts = formatter.formatToParts(now);
+  const year = parts.find(p => p.type === "year").value;
+  const month = parts.find(p => p.type === "month").value;
+  const day = parts.find(p => p.type === "day").value;
+
+  const melbourneDate = new Date(`${year}-${month}-${day}T00:00:00`);
+  melbourneDate.setDate(melbourneDate.getDate() + days);
+
+  return formatter.format(melbourneDate);
+}
 function esc(v){return String(v??"").replace(/[&<>'"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[c]))}
 function setBusy(v){document.getElementById("busy").classList.toggle("d-none",!v);document.getElementById("dryRunBtn").disabled=v;document.getElementById("liveRunBtn").disabled=v||!lastResult||Number(lastResult.missing_bpay_count||0)>0;document.getElementById("resetBtn").disabled=v}
 function alert(type,msg){document.getElementById("alertBox").innerHTML=`<div class="alert alert-${type}">${msg}</div>`}
@@ -150,7 +169,7 @@ async function loadRenewalConfig(){try{const data=await apiGet("/renewals/config
 function parseList(value){return String(value||"").split(/[\n,]+/).map(v=>v.trim()).filter(Boolean)}
 function parseIntList(value){return parseList(value).map(v=>Number(v)).filter(v=>Number.isFinite(v))}
 function buildRequest(){return{invoice_date:document.getElementById("invoiceDate").value,max_days_to_renewal_at_invoice_date:Number(document.getElementById("renewalDays").value||14),max_days_in_grace_at_invoice_date:Number(document.getElementById("graceDays").value||28),include_mail:document.getElementById("includeMail").checked,include_ebill:document.getElementById("includeEbill").checked,include_suppressed:document.getElementById("includeSuppressed").checked,suppress_subscription_ids:parseIntList(document.getElementById("suppressSubscriptionIds").value),suppress_route_ids:parseList(document.getElementById("suppressRouteIds").value)}}
-document.getElementById("invoiceDate").value=todayPlus(1);
+document.getElementById("invoiceDate").value=todayPlusMelbourne(1);
 document.getElementById("dryRunForm").addEventListener("submit",async(e)=>{e.preventDefault();clearAlert();if(!validateInclude())return;lastRequest=buildRequest();try{setBusy(true);const result=await api("/renewals/dry-run/details",lastRequest);if(!result)return;lastResult=result;Object.values(tableState).forEach(s=>{s.page=1;s.pageSize=PAGE_SIZE_DEFAULT});renderResults(result)}catch(err){alert("danger",esc(err.message))}finally{setBusy(false)}});
 function sleep(ms){return new Promise(resolve=>setTimeout(resolve,ms))}
 async function pollLiveRun(runId){
