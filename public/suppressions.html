@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MMG Renewal Suppressions</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body{background:#f7f8fa}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace}.table-wrap{max-height:650px;overflow:auto}.small-table{font-size:.85rem}.wide-table th,.wide-table td{white-space:nowrap;vertical-align:middle}.disabled-row{opacity:.55}.nav-link-btn{text-decoration:none}
+  </style>
+</head>
+<body>
+<nav class="navbar navbar-expand-lg bg-white border-bottom shadow-sm">
+  <div class="container-fluid">
+    <div class="d-flex align-items-center gap-3 flex-wrap">
+      <span class="navbar-brand fw-semibold mb-0">Renewal Suppression Rules</span>
+      <a class="btn btn-outline-secondary btn-sm" href="/renewals">Back to renewals</a>
+    </div>
+    <div class="d-flex align-items-center gap-3">
+      <span id="userLabel" class="text-muted small"></span>
+      <button id="logoutBtn" class="btn btn-outline-secondary btn-sm">Logout</button>
+    </div>
+  </div>
+</nav>
+<main class="container-fluid py-3">
+  <div id="alertBox"></div>
+
+  <div class="alert alert-info border-info small">
+    These are permanent suppression rules replacing the legacy <span class="mono">subIdExceptions</span> and <span class="mono">routeExceptions</span> arrays. Disabled rules remain visible for audit/history but are not applied to renewal processing.
+  </div>
+
+  <div class="row g-3">
+    <div class="col-xl-4">
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <h5 class="card-title">Add permanent suppression</h5>
+          <form id="addForm" class="vstack gap-3">
+            <div>
+              <label class="form-label" for="suppressionType">Rule type</label>
+              <select id="suppressionType" class="form-select">
+                <option value="subscription_id">Subscription ID</option>
+                <option value="route_id">Route ID</option>
+              </select>
+            </div>
+            <div id="subscriptionGroup">
+              <label class="form-label" for="subscriptionId">Subscription ID</label>
+              <input id="subscriptionId" class="form-control" type="number" placeholder="113265" />
+            </div>
+            <div id="routeGroup" class="d-none">
+              <label class="form-label" for="routeId">Route ID</label>
+              <input id="routeId" class="form-control" type="text" placeholder="AG85HD" />
+            </div>
+            <div>
+              <label class="form-label" for="reason">Reason</label>
+              <input id="reason" class="form-control" type="text" placeholder="Legacy suppression / customer exception" />
+            </div>
+            <div class="row g-2">
+              <div class="col-sm-6">
+                <label class="form-label" for="startDate">Start date</label>
+                <input id="startDate" class="form-control" type="date" />
+              </div>
+              <div class="col-sm-6">
+                <label class="form-label" for="endDate">End date</label>
+                <input id="endDate" class="form-control" type="date" />
+              </div>
+            </div>
+            <div class="form-check">
+              <input id="enabled" class="form-check-input" type="checkbox" checked />
+              <label class="form-check-label" for="enabled">Enabled</label>
+            </div>
+            <button id="addBtn" class="btn btn-primary" type="submit">Add suppression</button>
+          </form>
+        </div>
+      </div>
+    </div>
+    <div class="col-xl-8">
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-3">
+            <div>
+              <h5 class="card-title mb-1">Permanent suppressions</h5>
+              <div id="ruleCount" class="text-muted small"></div>
+            </div>
+            <div class="d-flex gap-2 flex-wrap align-items-center">
+              <input id="search" class="form-control form-control-sm" style="max-width:280px" placeholder="Search subscription, route, reason…" />
+              <div class="form-check mb-0">
+                <input id="includeDisabled" class="form-check-input" type="checkbox" checked />
+                <label class="form-check-label small" for="includeDisabled">Show disabled</label>
+              </div>
+              <button id="refreshBtn" class="btn btn-outline-primary btn-sm" type="button">Refresh</button>
+            </div>
+          </div>
+          <div id="rulesTable" class="table-wrap"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+let rules=[];
+function esc(value){return String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]))}
+function alertBox(type,msg){document.getElementById("alertBox").innerHTML=`<div class="alert alert-${type} alert-dismissible fade show" role="alert">${msg}<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>`}
+async function api(path,options={}){const res=await fetch(`/api${path}`,{cache:"no-store",credentials:"include",headers:{"Content-Type":"application/json",...(options.headers||{})},...options});const text=await res.text();let data={};try{data=text?JSON.parse(text):{}}catch{data={raw:text}}if(!res.ok)throw new Error(data.detail||data.error||text||`HTTP ${res.status}`);return data}
+async function loadUser(){const r=await fetch("/auth/me",{cache:"no-store",credentials:"include"});const data=await r.json();if(!data.authenticated){window.location.href="/login?returnTo="+encodeURIComponent(window.location.pathname);return}document.getElementById("userLabel").textContent=data.email}
+function currentType(){return document.getElementById("suppressionType").value}
+function toggleTypeFields(){const type=currentType();document.getElementById("subscriptionGroup").classList.toggle("d-none",type!=="subscription_id");document.getElementById("routeGroup").classList.toggle("d-none",type!=="route_id")}
+function filteredRules(){const q=document.getElementById("search").value.toLowerCase().trim();if(!q)return rules;return rules.filter(r=>[r.rule_id,r.suppression_type,r.subscription_id,r.route_id,r.reason,r.start_date,r.end_date].some(v=>String(v??"").toLowerCase().includes(q)))}
+function badge(enabled){return enabled?'<span class="badge text-bg-success">Enabled</span>':'<span class="badge text-bg-secondary">Disabled</span>'}
+function ruleTarget(r){return r.suppression_type==="subscription_id"?`Subscription ${esc(r.subscription_id)}`:`Route ${esc(r.route_id)}`}
+function render(){const rows=filteredRules();const active=rules.filter(r=>r.enabled).length;document.getElementById("ruleCount").textContent=`${active} enabled, ${rules.length-active} disabled`;if(!rows.length){document.getElementById("rulesTable").innerHTML='<p class="text-muted mb-0">No matching suppression rules.</p>';return}document.getElementById("rulesTable").innerHTML=`<table class="table table-sm table-striped small-table wide-table"><thead><tr><th>Status</th><th>Type</th><th>Target</th><th>Reason</th><th>Start</th><th>End</th><th>Rule ID</th><th>Actions</th></tr></thead><tbody>${rows.map(r=>`<tr class="${r.enabled?'':'disabled-row'}"><td>${badge(r.enabled)}</td><td>${esc(r.suppression_type)}</td><td>${ruleTarget(r)}</td><td>${esc(r.reason)}</td><td>${esc(r.start_date||'')}</td><td>${esc(r.end_date||'')}</td><td class="mono">${esc(r.rule_id)}</td><td><button class="btn btn-sm ${r.enabled?'btn-outline-warning':'btn-outline-success'}" onclick="setEnabled('${esc(r.rule_id)}',${!r.enabled})">${r.enabled?'Disable':'Enable'}</button></td></tr>`).join("")}</tbody></table>`}
+async function loadRules(){const includeDisabled=document.getElementById("includeDisabled").checked;const data=await api(`/renewals/suppression-rules?include_disabled=${includeDisabled?'true':'false'}`);rules=data.rules||[];render()}
+async function setEnabled(ruleId,enabled){await api(`/renewals/suppression-rules/${encodeURIComponent(ruleId)}`,{method:"PATCH",body:JSON.stringify({enabled})});await loadRules();alertBox("success",`Rule ${enabled?'enabled':'disabled'}.`) }
+document.getElementById("suppressionType").addEventListener("change",toggleTypeFields);
+document.getElementById("search").addEventListener("input",render);
+document.getElementById("includeDisabled").addEventListener("change",loadRules);
+document.getElementById("refreshBtn").addEventListener("click",loadRules);
+document.getElementById("addForm").addEventListener("submit",async(e)=>{e.preventDefault();const type=currentType();const payload={suppression_type:type,reason:document.getElementById("reason").value||null,start_date:document.getElementById("startDate").value||null,end_date:document.getElementById("endDate").value||null,enabled:document.getElementById("enabled").checked};if(type==="subscription_id")payload.subscription_id=Number(document.getElementById("subscriptionId").value);else payload.route_id=document.getElementById("routeId").value.trim();try{const result=await api("/renewals/suppression-rules",{method:"POST",body:JSON.stringify(payload)});if(result.status==="error")throw new Error(result.error);alertBox("success","Suppression rule added.");document.getElementById("addForm").reset();document.getElementById("enabled").checked=true;toggleTypeFields();await loadRules()}catch(err){alertBox("danger",esc(err.message))}});
+document.getElementById("logoutBtn").addEventListener("click",async()=>{await fetch("/auth/logout",{method:"POST",credentials:"include"});window.location.href="/login"});
+loadUser();toggleTypeFields();loadRules().catch(err=>alertBox("danger",esc(err.message)));
+</script>
+</body>
+</html>

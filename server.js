@@ -186,6 +186,11 @@ app.get(["/", "/renewals"], requireAuth, (req, res) => {
   res.sendFile(path.join(publicDir, "renewals.html"));
 });
 
+app.get("/suppressions", requireAuth, (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.sendFile(path.join(publicDir, "suppressions.html"));
+});
+
 app.use(express.static(publicDir, { index: false }));
 
 const port = process.env.PORT || 8080;
