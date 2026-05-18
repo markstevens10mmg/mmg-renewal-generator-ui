@@ -151,19 +151,60 @@ function downloadsOf(result){return responseOf(result).downloads||result?.downlo
 function warningsOf(result){return responseOf(result).warnings||result?.warnings||[]}
 function getDataSets(result){return{mail:getRows(result,["mail_rows","mail_renewals","mail_candidates","mail_preview","preview.mail","rows.mail","mail"]),ebill:getRows(result,["ebill_rows","ebill_renewals","ebill_candidates","ebill_preview","preview.ebill","rows.ebill","ebill"]),bpay:getRows(result,["missing_bpay_rows","missing_bpay","missing_bpay_candidates","missing_bpay_preview","preview.missing_bpay","rows.missing_bpay"]),suppressed:getRows(result,["suppressed_rows","suppressed","suppressed_candidates","suppressed_preview","preview.suppressed","rows.suppressed"])}}
 function renderSummary(result){const rows=getDataSets(result);const r=responseOf(result);const mode=r?.mode||result?.mode||"dry_run";const isDry=mode!=="live";const missing=countOf(result,"missing_bpay_count",rows.bpay);document.getElementById("summary").classList.remove("d-none");document.getElementById("summary").innerHTML=[metric("Mail",countOf(result,"mail_count",rows.mail),"primary","✉"),metric("eBill",countOf(result,"ebill_count",rows.ebill),"primary","▣"),metric("Missing BPAY",missing,missing>0?"danger":"success",missing>0?"!":"✓"),metric("Suppressed",countOf(result,"suppressed_count",rows.suppressed),"secondary","●")].join("");const warnings=warningsOf(result).map(w=>`<div class="alert alert-warning mb-2">${esc(w)}</div>`).join("");document.getElementById("alertBox").innerHTML=warnings;document.getElementById("liveRunBtn").disabled=missing>0;document.getElementById("dryRunBadge").classList.toggle("d-none",!isDry);document.getElementById("dryRunFootnote").classList.toggle("d-none",!isDry)}
-function downloadLabel(key){if(key==="mail_csv")return "Mail CSV";if(key==="missing_bpay_csv")return "Missing BPAY CSV";if(key==="suppressed_csv")return "Suppressed CSV";if(key.startsWith("mail_pdf_"))return `Mail PDF ${key.replace("mail_pdf_","")}`;return key}
-function isVisibleDownload(key){return key==="mail_csv"||key==="missing_bpay_csv"||key==="suppressed_csv"||key.startsWith("mail_pdf_")}
-function renderDownloads(downloads,mode="dry_run"){const el=document.getElementById("downloads");const isLive=mode==="live";const entries=Object.entries(downloads||{}).filter(([k,u])=>u&&isVisibleDownload(k));if(!entries.length){el.classList.add("d-none");el.innerHTML="";return}const links=entries.map(([k,u])=>`<a class="btn btn-outline-${isLive&&k.includes("pdf")?"success":"primary"} btn-sm me-2 mb-2" href="${esc(u)}" target="_blank" rel="noopener">${esc(downloadLabel(k))}</a>`).join("");el.classList.remove("d-none");el.innerHTML=`<div class="card"><div class="card-body"><div class="d-flex justify-content-between flex-wrap gap-2"><h5 class="mb-2">Downloads (${isLive?"live run":"dry run"})</h5><span class="text-muted small">${isLive?"Mail PDFs for printing plus any operator CSVs":"CSV files available for this dry run"}</span></div>${links}</div></div>`}
+function downloadLabel(key){if(key==="mail_csv")return "Mail CSV";if(key==="ebill_csv")return "eBill CSV";if(key==="missing_bpay_csv")return "Missing BPAY CSV";if(key==="suppressed_csv")return "Suppressed CSV";if(key.startsWith("mail_pdf_"))return `Mail PDF ${key.replace("mail_pdf_","")}`;return key}
+function isVisibleDownload(key){return key==="mail_csv"||key==="ebill_csv"||key==="missing_bpay_csv"||key==="suppressed_csv"||key.startsWith("mail_pdf_")}
+function localCsvButton(key,label,rows){
+  if(!rows||!rows.length)return "";
+  return `<button type="button" class="btn btn-outline-primary btn-sm me-2 mb-2" onclick="exportAllRows('${key}')">${esc(label)}</button>`
+}
+function renderDownloads(downloads,mode="dry_run",rowsByKey={}){
+  const el=document.getElementById("downloads");
+  const isLive=mode==="live";
+  const entries=Object.entries(downloads||{}).filter(([k,u])=>u&&isVisibleDownload(k));
+  const localButtons=mode==="dry_run"
+    ? [
+        localCsvButton("mail","Mail CSV",rowsByKey.mail),
+        localCsvButton("ebill","eBill CSV",rowsByKey.ebill),
+        localCsvButton("missing_bpay","Missing BPAY CSV",rowsByKey.bpay),
+        localCsvButton("suppressed","Suppressed CSV",rowsByKey.suppressed)
+      ].join("")
+    : "";
+  if(!entries.length&&!localButtons){
+    el.classList.add("d-none");
+    el.innerHTML="";
+    return;
+  }
+  const links=entries.map(([k,u])=>`<a class="btn btn-outline-${isLive&&k.includes("pdf")?"success":"primary"} btn-sm me-2 mb-2" href="${esc(u)}" target="_blank" rel="noopener">${esc(downloadLabel(k))}</a>`).join("");
+  el.classList.remove("d-none");
+  el.innerHTML=`<div class="card"><div class="card-body"><div class="d-flex justify-content-between flex-wrap gap-2"><h5 class="mb-2">Downloads (${isLive?"live run":"dry run"})</h5><span class="text-muted small">${isLive?"Mail PDFs for printing plus CSVs for operator review":"CSV downloads are generated locally in your browser and are not stored in GCS"}</span></div>${links}${localButtons}</div></div>`
+}
 function filterRows(rows,search,mode="dry_run"){if(!search)return rows;const q=search.toLowerCase();const searchCols=allSearchCols(mode);return rows.filter(r=>searchCols.some(c=>String(r?.[c]??"").toLowerCase().includes(q)))}
 function renderCell(row,col){const value=row?.[col];if(col==="ebillPdfUrl"&&value){return `<a class="pdf-link" href="${esc(value)}" target="_blank" rel="noopener">Open PDF</a>`}return esc(value)}
 function renderTable(key,elId,title,rows,total,mode="dry_run"){const el=document.getElementById(elId);const state=tableState[key];const tableCols=colsFor(key,mode);const filtered=filterRows(rows||[],state.search,mode);const totalRows=typeof total==='number'?total:(rows||[]).length;const pageCount=Math.max(1,Math.ceil(filtered.length/state.pageSize));state.page=Math.min(Math.max(1,state.page),pageCount);const start=(state.page-1)*state.pageSize;const pageRows=filtered.slice(start,start+state.pageSize);const badge=mode==="live"?"":` <span class="badge text-bg-warning ms-2">DRY RUN</span>`;if(!rows||rows.length===0){el.innerHTML=`<div class="card"><div class="card-body"><h5>${esc(title)}${badge}</h5><p class="text-muted mb-0">No rows.</p></div></div>`;return}const body=pageRows.map(r=>`<tr>${tableCols.map(h=>`<td>${renderCell(r,h)}</td>`).join("")}</tr>`).join("");const showingFrom=filtered.length?start+1:0;const showingTo=Math.min(start+state.pageSize,filtered.length);el.innerHTML=`<div class="card"><div class="card-body"><div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-3"><div><h5 class="mb-1">${esc(title)}${badge}</h5><div class="text-muted small">Showing ${showingFrom} to ${showingTo} of ${filtered.length} results${totalRows!==filtered.length?` (${totalRows} total candidates)`:""}.</div></div><div class="d-flex gap-2 flex-wrap"><input class="form-control form-control-sm" style="max-width:260px" placeholder="Search…" value="${esc(state.search)}" oninput="updateSearch('${key}', this.value)"><button class="btn btn-outline-primary btn-sm" onclick="exportVisible('${key}')">Export this table</button><select class="form-select form-select-sm" style="width:90px" onchange="updatePageSize('${key}', this.value)"><option value="100" ${state.pageSize==100?'selected':''}>100</option><option value="250" ${state.pageSize==250?'selected':''}>250</option><option value="500" ${state.pageSize==500?'selected':''}>500</option></select></div></div><div class="table-wrap"><table class="table table-sm table-striped small-table wide-table"><thead><tr>${tableCols.map(h=>`<th>${esc(h)}</th>`).join("")}</tr></thead><tbody>${body}</tbody></table></div><div class="table-footer mt-3"><span class="text-muted small">Rows per page: ${state.pageSize}</span><div class="btn-group btn-group-sm"><button class="btn btn-outline-secondary" ${state.page<=1?'disabled':''} onclick="goPage('${key}',1)">«</button><button class="btn btn-outline-secondary" ${state.page<=1?'disabled':''} onclick="goPage('${key}',${state.page-1})">‹</button><span class="btn btn-primary disabled">${state.page}</span><button class="btn btn-outline-secondary" ${state.page>=pageCount?'disabled':''} onclick="goPage('${key}',${state.page+1})">›</button><button class="btn btn-outline-secondary" ${state.page>=pageCount?'disabled':''} onclick="goPage('${key}',${pageCount})">»</button></div></div></div></div>`}
 function updateTabs(result){const rows=getDataSets(result);const mail=countOf(result,"mail_count",rows.mail);const ebill=countOf(result,"ebill_count",rows.ebill);const bpay=countOf(result,"missing_bpay_count",rows.bpay);const suppressed=countOf(result,"suppressed_count",rows.suppressed);document.getElementById("mailTab").textContent=`Mail renewals (${mail})`;document.getElementById("ebillTab").textContent=`eBill renewals (${ebill})`;document.getElementById("bpayTab").textContent=`Missing BPAY (${bpay})`;document.getElementById("suppressedTab").textContent=`Suppressed preview (${suppressed})`;document.getElementById("bpayTab").classList.toggle("text-danger",Number(bpay||0)>0)}
-function renderResults(result){const r=responseOf(result);const mode=r?.mode||result?.mode||"dry_run";document.getElementById("resultTabs").classList.remove("d-none");renderSummary(result);renderDownloads(downloadsOf(result),mode);updateTabs(result);const rows=getDataSets(result);renderTable("mail","mailTable",mode==="live"?"Mail renewals":"Mail renewals (dry run preview)",rows.mail,countOf(result,"mail_count",rows.mail),mode);renderTable("ebill","ebillTable",mode==="live"?"eBill renewals":"eBill renewals (dry run preview)",rows.ebill,countOf(result,"ebill_count",rows.ebill),mode);renderTable("bpay","bpayTable",mode==="live"?"Missing BPAY":"Missing BPAY (dry run preview)",rows.bpay,countOf(result,"missing_bpay_count",rows.bpay),mode);if((r?.suppressed_included??result?.suppressed_included)===false){document.getElementById("suppressedTable").innerHTML=`<div class="card"><div class="card-body"><h5>Suppressed preview</h5><p class="text-muted mb-0">Suppressed CSV/table output was not generated for this run. Tick <strong>Suppressed</strong> before running a dry run to include those rows.</p></div></div>`}else{renderTable("suppressed","suppressedTable",mode==="live"?"Suppressed":"Suppressed preview (dry run)",rows.suppressed,countOf(result,"suppressed_count",rows.suppressed),mode)}}
+function renderResults(result){const r=responseOf(result);const mode=r?.mode||result?.mode||"dry_run";document.getElementById("resultTabs").classList.remove("d-none");renderSummary(result);const rows=getDataSets(result);renderDownloads(downloadsOf(result),mode,rows);updateTabs(result);renderTable("mail","mailTable",mode==="live"?"Mail renewals":"Mail renewals (dry run preview)",rows.mail,countOf(result,"mail_count",rows.mail),mode);renderTable("ebill","ebillTable",mode==="live"?"eBill renewals":"eBill renewals (dry run preview)",rows.ebill,countOf(result,"ebill_count",rows.ebill),mode);renderTable("bpay","bpayTable",mode==="live"?"Missing BPAY":"Missing BPAY (dry run preview)",rows.bpay,countOf(result,"missing_bpay_count",rows.bpay),mode);if((r?.suppressed_included??result?.suppressed_included)===false){document.getElementById("suppressedTable").innerHTML=`<div class="card"><div class="card-body"><h5>Suppressed preview</h5><p class="text-muted mb-0">Suppressed CSV/table output was not generated for this run. Tick <strong>Suppressed</strong> before running a dry run to include those rows.</p></div></div>`}else{renderTable("suppressed","suppressedTable",mode==="live"?"Suppressed":"Suppressed preview (dry run)",rows.suppressed,countOf(result,"suppressed_count",rows.suppressed),mode)}}
 function rerender(){if(lastResult)renderResults(lastResult)}
 function updateSearch(key,value){tableState[key].search=value;tableState[key].page=1;rerender()}
 function updatePageSize(key,value){tableState[key].pageSize=Number(value)||PAGE_SIZE_DEFAULT;tableState[key].page=1;rerender()}
 function goPage(key,page){tableState[key].page=page;rerender()}
 function exportVisible(key){if(!lastResult)return;const mode=responseOf(lastResult)?.mode||lastResult?.mode||"dry_run";const tableCols=colsFor(key,mode);const rows=filterRows(getDataSets(lastResult)[key]||[],tableState[key].search,mode);const csv=[tableCols.join(",")].concat(rows.map(r=>tableCols.map(c=>`"${String(r[c]??"").replace(/"/g,'""')}"`).join(","))).join("\n");const blob=new Blob([csv],{type:"text/csv;charset=utf-8"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=`${key}-${mode==="live"?"live-run":"dry-run-preview"}.csv`;a.click();URL.revokeObjectURL(url)}
+
+function exportAllRows(key){
+  if(!lastResult)return;
+  const mode=responseOf(lastResult)?.mode||lastResult?.mode||"dry_run";
+  const tableKey=key==="missing_bpay"?"bpay":key;
+  const tableCols=colsFor(tableKey,mode);
+  const rows=(getDataSets(lastResult)[tableKey]||[]);
+  const csv=[tableCols.join(",")].concat(rows.map(r=>tableCols.map(c=>`"${String(r[c]??"").replace(/"/g,'""')}"`).join(","))).join("\n");
+  const blob=new Blob([csv],{type:"text/csv;charset=utf-8"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url;
+  a.download=`${key}-${mode==="live"?"live-run":"dry-run"}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 async function loadUser(){const r=await fetch("/auth/me",{cache:"no-store",credentials:"include"});const data=await r.json();if(!data.authenticated){window.location.href="/login?returnTo="+encodeURIComponent(window.location.pathname);return}document.getElementById("userLabel").textContent=data.email}
 async function loadRenewalConfig(){try{const data=await apiGet("/renewals/config");if(!data)return;renewalConfig=data;const banner=document.getElementById("emailTestModeBanner");const testMode=!!data.ebillEmailTestMode;const recipient=data.ebillEmailTestRecipient||"[not configured]";banner.classList.toggle("d-none",!testMode);if(testMode){banner.textContent=`EMAIL TEST MODE ACTIVE — all eBills redirect to ${recipient}`}}catch(err){console.warn("Could not load renewal config",err)}}
 function parseList(value){return String(value||"").split(/[\n,]+/).map(v=>v.trim()).filter(Boolean)}
@@ -184,6 +225,28 @@ async function pollLiveRun(runId){
     if(!["queued","running","unknown"].includes(state)){return status}
   }
 }
+
+async function loadRunFromQuery(){
+  const params=new URLSearchParams(window.location.search);
+  const runId=params.get("run_id");
+  if(!runId)return;
+  try{
+    setBusy(true);
+    alert("info",`Loading renewal run: <span class="mono">${esc(runId)}</span>`);
+    const result=await apiGet(`/renewals/run/${encodeURIComponent(runId)}`);
+    if(!result)return;
+    lastResult=result;
+    Object.values(tableState).forEach(s=>{s.page=1;s.pageSize=PAGE_SIZE_DEFAULT});
+    renderResults(result);
+    const status=result.status||"unknown";
+    alert(status==="completed"?"success":(status==="failed"?"danger":"info"),`Loaded run status: <span class="mono">${esc(status)}</span>. Run ID: <span class="mono">${esc(runId)}</span>`);
+  }catch(err){
+    alert("danger",esc(err.message));
+  }finally{
+    setBusy(false);
+  }
+}
+
 document.getElementById("liveRunBtn").addEventListener("click",async()=>{if(!lastRequest)return;const testModeMsg=renewalConfig.ebillEmailTestMode?`
 
 EMAIL TEST MODE ACTIVE — all eBills will redirect to ${renewalConfig.ebillEmailTestRecipient||"[not configured]"}.`:"";if(!confirm("Prepare renewal communications for this invoice date? Mail PDFs will be generated and eBill records will be queued for sending on the invoice date. eBills are not sent immediately by this action."+testModeMsg))return;try{setBusy(true);const started=await api("/renewals/run",lastRequest);if(!started)return;alert("info",`Live run queued. Run ID: <span class="mono">${esc(started.run_id)}</span><br>PDF generation and eBill queueing will continue in the background. This page will update when the run completes.`);const result=await pollLiveRun(started.run_id);if(!result)return;const finalStatus=result.status||"unknown";alert(finalStatus==="completed"?"success":(finalStatus.startsWith("blocked")?"danger":"warning"),`Run status: <span class="mono">${esc(finalStatus)}</span>. Run ID: <span class="mono">${esc(result.run_id)}</span>${finalStatus==="completed"?"<br>eBills have been queued for the invoice date; they have not been emailed immediately.":""}`);lastResult=result;Object.values(tableState).forEach(s=>{s.page=1;s.pageSize=PAGE_SIZE_DEFAULT});renderResults(result)}catch(err){alert("danger",esc(err.message))}finally{setBusy(false)}});
@@ -191,6 +254,7 @@ document.getElementById("resetBtn").addEventListener("click",()=>{lastRequest=nu
 document.getElementById("logoutBtn").addEventListener("click",async()=>{await fetch("/auth/logout",{method:"POST",credentials:"include"});window.location.href="/login"});
 loadUser();
 loadRenewalConfig();
+loadRunFromQuery();
 </script>
 </body>
 </html>
