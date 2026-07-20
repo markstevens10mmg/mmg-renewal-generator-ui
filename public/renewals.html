@@ -58,7 +58,13 @@
         </div>
       </div>
       <div class="col-12 operator-panel">
-        <button class="btn btn-link p-0 small" type="button" data-bs-toggle="collapse" data-bs-target="#singleRunSuppressions" aria-expanded="false" aria-controls="singleRunSuppressions">Add/reveal one-run suppressions</button>
+        <button id="singleRunSuppressionsToggle" class="btn btn-link p-0 small d-inline-flex align-items-center gap-2 flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#singleRunSuppressions" aria-expanded="false" aria-controls="singleRunSuppressions">
+          <span>Add/reveal one-run suppressions</span>
+          <span id="singleRunSuppressionCounts" class="d-none">
+            <span id="singleRunSubscriptionCount" class="badge text-bg-secondary"></span>
+            <span id="singleRunRouteCount" class="badge text-bg-secondary"></span>
+          </span>
+        </button>
         <div class="collapse mt-2" id="singleRunSuppressions">
           <div class="alert alert-light border mb-2 small">Rows already suppressed by existing rules can be viewed by ticking <strong>Suppressed</strong> and running a dry run. Add subscription IDs or route IDs below to suppress them for this run only; these values are not saved back to BigQuery.</div>
           <div class="d-flex gap-3 flex-wrap">
@@ -250,8 +256,23 @@ async function loadUser(){const r=await fetch("/auth/me",{cache:"no-store",crede
 async function loadRenewalConfig(){try{const data=await apiGet("/renewals/config");if(!data)return;renewalConfig=data;const banner=document.getElementById("emailTestModeBanner");const testMode=!!data.ebillEmailTestMode;const recipient=data.ebillEmailTestRecipient||"[not configured]";banner.classList.toggle("d-none",!testMode);if(testMode){banner.textContent=`EMAIL TEST MODE ACTIVE — all eBills redirect to ${recipient}`}}catch(err){console.warn("Could not load renewal config",err)}}
 function parseList(value){return String(value||"").split(/[\n,]+/).map(v=>v.trim()).filter(Boolean)}
 function parseIntList(value){return parseList(value).map(v=>Number(v)).filter(v=>Number.isFinite(v))}
+function uniqueCount(values,normalise=value=>String(value)){return new Set(values.map(normalise)).size}
+function updateSingleRunSuppressionCounts(){
+  const subscriptionCount=uniqueCount(parseIntList(document.getElementById("suppressSubscriptionIds").value));
+  const routeCount=uniqueCount(parseList(document.getElementById("suppressRouteIds").value),value=>String(value).toUpperCase());
+  const counts=document.getElementById("singleRunSuppressionCounts");
+  const subscriptionBadge=document.getElementById("singleRunSubscriptionCount");
+  const routeBadge=document.getElementById("singleRunRouteCount");
+  subscriptionBadge.textContent=`${subscriptionCount} subscription ID${subscriptionCount===1?"":"s"}`;
+  routeBadge.textContent=`${routeCount} route ID${routeCount===1?"":"s"}`;
+  subscriptionBadge.classList.toggle("d-none",subscriptionCount===0);
+  routeBadge.classList.toggle("d-none",routeCount===0);
+  counts.classList.toggle("d-none",subscriptionCount===0&&routeCount===0);
+}
 function buildRequest(){return{invoice_date:document.getElementById("invoiceDate").value,max_days_to_renewal_at_invoice_date:Number(document.getElementById("renewalDays").value||14),max_days_in_grace_at_invoice_date:Number(document.getElementById("graceDays").value||28),include_mail:document.getElementById("includeMail").checked,include_ebill:document.getElementById("includeEbill").checked,include_suppressed:document.getElementById("includeSuppressed").checked,suppress_subscription_ids:parseIntList(document.getElementById("suppressSubscriptionIds").value),suppress_route_ids:parseList(document.getElementById("suppressRouteIds").value)}}
 document.getElementById("invoiceDate").value=todayPlusMelbourne(1);
+["suppressSubscriptionIds","suppressRouteIds"].forEach(id=>document.getElementById(id).addEventListener("input",updateSingleRunSuppressionCounts));
+updateSingleRunSuppressionCounts();
 document.getElementById("dryRunForm").addEventListener("submit",async(e)=>{e.preventDefault();clearAlert();if(!validateInclude())return;lastRequest=buildRequest();try{setBusy(true);const result=await api("/renewals/dry-run/details",lastRequest);if(!result)return;lastResult=result;Object.values(tableState).forEach(s=>{s.page=1;s.pageSize=PAGE_SIZE_DEFAULT});renderResults(result)}catch(err){alert("danger",esc(err.message))}finally{setBusy(false)}});
 function sleep(ms){return new Promise(resolve=>setTimeout(resolve,ms))}
 async function pollLiveRun(runId){
@@ -291,7 +312,7 @@ async function loadRunFromQuery(){
 document.getElementById("liveRunBtn").addEventListener("click",async()=>{if(!lastRequest)return;const testModeMsg=renewalConfig.ebillEmailTestMode?`
 
 EMAIL TEST MODE ACTIVE — all eBills will redirect to ${renewalConfig.ebillEmailTestRecipient||"[not configured]"}.`:"";if(!confirm("Prepare renewal communications for this invoice date? Mail PDFs will be generated and eBill records will be queued for sending on the invoice date. eBills are not sent immediately by this action."+testModeMsg))return;try{setBusy(true);const started=await api("/renewals/run",lastRequest);if(!started)return;alert("info",`Live run queued. Run ID: <span class="mono">${esc(started.run_id)}</span><br>PDF generation and eBill queueing will continue in the background. This page will update when the run completes.`);const result=await pollLiveRun(started.run_id);if(!result)return;const finalStatus=result.status||"unknown";alert(finalStatus==="completed"?"success":(finalStatus.startsWith("blocked")?"danger":"warning"),`Run status: <span class="mono">${esc(finalStatus)}</span>. Run ID: <span class="mono">${esc(result.run_id)}</span>${finalStatus==="completed"?"<br>eBills have been queued for the invoice date; they have not been emailed immediately.":""}`);lastResult=result;Object.values(tableState).forEach(s=>{s.page=1;s.pageSize=PAGE_SIZE_DEFAULT});renderResults(result)}catch(err){alert("danger",esc(err.message))}finally{setBusy(false)}});
-document.getElementById("resetBtn").addEventListener("click",()=>{lastRequest=null;lastResult=null;clearAlert();document.getElementById("summary").classList.add("d-none");document.getElementById("downloads").classList.add("d-none");document.getElementById("resultTabs").classList.add("d-none");document.getElementById("dryRunBadge").classList.add("d-none");document.getElementById("dryRunFootnote").classList.add("d-none");["mailTable","ebillTable","bpayTable","suppressedTable"].forEach(id=>document.getElementById(id).innerHTML="");setBusy(false)});
+document.getElementById("resetBtn").addEventListener("click",()=>{lastRequest=null;lastResult=null;clearAlert();document.getElementById("summary").classList.add("d-none");document.getElementById("downloads").classList.add("d-none");document.getElementById("resultTabs").classList.add("d-none");document.getElementById("dryRunBadge").classList.add("d-none");document.getElementById("dryRunFootnote").classList.add("d-none");["mailTable","ebillTable","bpayTable","suppressedTable"].forEach(id=>document.getElementById(id).innerHTML="");document.getElementById("suppressSubscriptionIds").value="";document.getElementById("suppressRouteIds").value="";updateSingleRunSuppressionCounts();setBusy(false)});
 document.getElementById("logoutBtn").addEventListener("click",async()=>{await fetch("/auth/logout",{method:"POST",credentials:"include"});window.location.href="/login"});
 loadUser();
 loadRenewalConfig();
